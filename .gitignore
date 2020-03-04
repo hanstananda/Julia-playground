@@ -25,3 +25,9 @@ Manifest.toml
 
 .ipynb_checkpoints/
 venv/
+
+# IDE settings
+.idea/
+
+# Auto-generated input file 
+MST/in*.in
