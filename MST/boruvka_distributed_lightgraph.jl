@@ -4,15 +4,15 @@ boruvka_multithread_lightgraph:
 - Author: hanstananda
 - Date: 2020-03-15
 =#
-using LightGraphs, SimpleWeightedGraphs
+@everywhere using LightGraphs, SimpleWeightedGraphs
 using CPUTime
 using DelimitedFiles
-using Base
-using DataStructures
-using Base.Threads
+@everywhere using Base
+@everywhere using DataStructures
+using SharedArrays
 
 """
-    boruvka_mst_single(g)
+    boruvka_mst_distributed(g)
 
 Return a tuple `(mst, weights)` where `mst` is a vector of edges representing the
 optimum (minimum, by default) spanning tree of a connected, undirected graph
@@ -22,13 +22,13 @@ The algorithm requires that all edges have different weights to correctly genera
 ### Optional parameter(s):
 `maxItr`: Used to limit maximum number of iterations the algorithm will be performed. The default is log2(numVertex).
 """
-function boruvka_mst_single(g::SimpleWeightedGraph, maxItr = convert(Int64, round(log2(nv(g))+1, digits=0)))
+function boruvka_mst_distributed(g::SimpleWeightedGraph, maxItr = convert(Int64, round(log2(nv(g))+1, digits=0)))
     connected_vs = IntDisjointSets(nv(g))
     joined_nodes = Dict{Int, Vector{Int}}(i=>[i] for i in 1:nv(g))
     MAX_WEIGHT=2000000000.0
-    minCost = fill(MAX_WEIGHT, nv(g)+1)
-    minNodeTgt = Vector{Int}(1:nv(g)+1)
-    minNodeSrc = Vector{Int}(1:nv(g)+1)
+    minCost = SharedArray{Float64}(nv(g)+1)
+    minNodeTgt = SharedArray{Int}(nv(g)+1)
+    minNodeSrc = SharedArray{Int}(nv(g)+1)
     mst = Vector{edgetype(g)}()
     sizehint!(mst, nv(g) - 1)
     res =0
@@ -47,9 +47,9 @@ end
 
 function initMinCostArray(
         g::SimpleWeightedGraph,
-        minNodeSrc::Vector{Int},
-        minNodeTgt::Vector{Int},
-        minCost::Vector{Float64},
+        minNodeSrc::SharedArray{Int,1},
+        minNodeTgt::SharedArray{Int,1},
+        minCost::SharedArray{Float64,1},
         MAX_WEIGHT::Float64
     )
     for i = 1:nv(g)
@@ -61,14 +61,14 @@ end
 
 function findMinCostVertex(
         g::SimpleWeightedGraph,
-        minNodeSrc::Vector{Int},
-        minNodeTgt::Vector{Int},
-        minCost::Vector{Float64},
+        minNodeSrc::SharedArray{Int},
+        minNodeTgt::SharedArray{Int},
+        minCost::SharedArray{Float64},
         joined_nodes::Dict{Int, Vector{Int}},
         connected_vs::IntDisjointSets,
     )
     sets = Vector{Int}(first.(keys(joined_nodes)))
-    for i in sets
+    @sync @distributed for i in sets
         # println("Accessing set ",i, " with sources ", joined_nodes[i])
         for src in joined_nodes[i]
             for dst in neighbors(g, src)
@@ -91,9 +91,9 @@ end
 
 function contractVertex(
         g::SimpleWeightedGraph,
-        minNodeSrc::Vector{Int},
-        minNodeTgt::Vector{Int},
-        minCost::Vector{Float64},
+        minNodeSrc::SharedArray{Int},
+        minNodeTgt::SharedArray{Int},
+        minCost::SharedArray{Float64},
         joined_nodes::Dict{Int, Vector{Int}},
         connected_vs::IntDisjointSets,
         mst::Vector,
